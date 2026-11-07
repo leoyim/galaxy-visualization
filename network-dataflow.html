@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>网线数据流 · 实测天文载荷可视化</title>
+<style>
+  :root {
+    --cyan: #33ccff;
+    --mag: #ff3399;
+    --bg: #03060c;
+    --panel: rgba(8, 18, 28, 0.72);
+    --line: rgba(51, 204, 255, 0.35);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); }
+  body { font-family: "SFMono-Regular", "Consolas", "Menlo", monospace; color: #cfe9ff; }
+  #app { position: fixed; inset: 0; }
+  .panel {
+    position: fixed; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 12px 14px; backdrop-filter: blur(8px);
+    box-shadow: 0 0 24px rgba(51, 204, 255, 0.08), inset 0 0 30px rgba(51, 204, 255, 0.04);
+  }
+  /* 标题 */
+  #topbar { top: 16px; left: 16px; max-width: 420px; }
+  #topbar h1 { margin: 0 0 4px; font-size: 16px; letter-spacing: 1px; color: #eaf6ff; }
+  #topbar .sub { font-size: 11px; color: #7fb8d8; }
+  #src-line { margin-top: 6px; font-size: 10.5px; color: #5e93b0; line-height: 1.5; }
+  /* 统计 */
+  #stats { top: 16px; right: 16px; min-width: 210px; }
+  #stats .panel-title { font-size: 11px; color: var(--cyan); letter-spacing: 1px; margin-bottom: 8px; }
+  .stat-row { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; border-bottom: 1px dashed rgba(51,204,255,0.12); }
+  .stat-row b { color: #eaf6ff; font-weight: 600; }
+  /* 以太网帧 */
+  #framepanel { left: 16px; bottom: 86px; width: 340px; }
+  #framepanel .panel-title { font-size: 11px; color: var(--mag); letter-spacing: 1px; margin-bottom: 8px; }
+  .frame-head { font-size: 12px; color: #eaf6ff; border-left: 3px solid var(--cyan); padding-left: 8px; margin-bottom: 6px; }
+  #frame table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  #frame td { padding: 3px 4px; border-bottom: 1px solid rgba(51,204,255,0.08); }
+  #frame .fk { color: #8fd0ee; white-space: nowrap; }
+  #frame .fb { color: #ffd27a; text-align: right; width: 56px; }
+  #frame .fv { color: #9fb6c8; font-size: 10px; word-break: break-all; }
+  #frame .total td { color: #eaf6ff; font-weight: 600; border-top: 1px solid var(--line); }
+  /* 实时日志 */
+  #logpanel { right: 16px; top: 150px; width: 290px; max-height: 46vh; overflow: hidden; }
+  #logpanel .panel-title { font-size: 11px; color: var(--cyan); letter-spacing: 1px; margin-bottom: 8px; }
+  .log-row { font-size: 11px; padding: 5px 0; border-bottom: 1px solid rgba(51,204,255,0.08); line-height: 1.4; }
+  .log-row .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; box-shadow: 0 0 6px currentColor; }
+  .log-row b { color: #eaf6ff; }
+  .log-row .muted { color: #6f9bb5; }
+  .log-row .kv { color: #8fd0ee; font-size: 10.5px; margin-right: 6px; }
+  /* 控制条 */
+  #controls { bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 14px; align-items: center; }
+  #controls button { background: rgba(51,204,255,0.12); color: #eaf6ff; border: 1px solid var(--line); border-radius: 6px; padding: 7px 14px; font-family: inherit; font-size: 12px; cursor: pointer; }
+  #controls button:hover { background: rgba(51,204,255,0.22); }
+  #controls label { font-size: 11px; color: #8fd0ee; display: flex; align-items: center; gap: 6px; }
+  #controls input[type=range] { width: 110px; accent-color: var(--cyan); }
+  #speedVal { color: #eaf6ff; min-width: 34px; }
+  /* 节点标签 */
+  .node-label { font-size: 11px; color: #bfe6ff; text-shadow: 0 0 8px rgba(51,204,255,0.6); white-space: nowrap; }
+  .node-label.src { color: #aef0ff; }
+  .node-label.sink { color: #ffb3da; }
+  /* 帮助 */
+  #help { position: fixed; bottom: 16px; right: 16px; font-size: 10.5px; color: #5e93b0; text-align: right; line-height: 1.5; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://registry.npmmirror.com/three/0.160.0/files/build/three.module.js",
+    "three/addons/": "https://registry.npmmirror.com/three/0.160.0/files/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+  <div id="app"></div>
+
+  <div id="topbar" class="panel">
+    <h1>网线数据流 · 实测天文载荷</h1>
+    <div class="sub">普通以太网线缆（1000BASE-T）数据传输可视化</div>
+    <div id="src-line">数据源加载中…</div>
+  </div>
+
+  <div id="stats" class="panel">
+    <div class="panel-title">链路统计</div>
+    <div class="stat-row"><span>已发送帧</span><b id="stat-packets">0</b></div>
+    <div class="stat-row"><span>累计流量</span><b id="stat-bytes">0.00 MB</b></div>
+    <div class="stat-row"><span>演示节奏</span><b id="stat-fps">2.2 帧/秒</b></div>
+    <div class="stat-row"><span>物理链路</span><b>1.0 Gbps</b></div>
+    <div class="stat-row"><span>加速比</span><b id="stat-accel">≈ 1:0</b></div>
+  </div>
+
+  <div id="framepanel" class="panel">
+    <div class="panel-title">数据帧结构（实时）</div>
+    <div id="frame"><div class="frame-head">等待数据包…</div></div>
+  </div>
+
+  <div id="logpanel" class="panel">
+    <div class="panel-title">实测载荷日志</div>
+    <div id="log"></div>
+  </div>
+
+  <div id="controls" class="panel">
+    <button id="playBtn">暂停</button>
+    <label>速度 <input id="speed" type="range" min="0.2" max="4" step="0.1" value="1" /><span id="speedVal">1.0×</span></label>
+  </div>
+
+  <div id="help">
+    左键拖拽旋转 · 滚轮缩放 · 右键平移<br/>
+    数据为 NASA 实测，仅作可视化载荷；演示节奏已大幅加速
+  </div>
+
+  <!-- 真实数据（classic script，可被 file:// 直接读取） -->
+  <script src="exodata.js"></script>
+  <!-- 三维引擎（ES module，从 CDN 加载 three） -->
+  <script type="module" src="main_cable.js"></script>
+</body>
+</html>

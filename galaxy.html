@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>近邻宇宙星系可视化</title>
+<style>
+/* 注意：本页通过相对路径直接 import 本地 three，无需 importmap；必须经 http(s) 本地服务器打开，不能双击 file:// */  :root{
+    --bg:#04060c; --cyan:#5fe3ff; --amber:#ffcf6b; --line:rgba(95,227,255,.25);
+    --panel:rgba(8,14,24,.72); --txt:#cfe3f2; --dim:#7e93a8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--bg);overflow:hidden;
+    font-family:"Segoe UI","PingFang SC","Microsoft YaHei",Consolas,monospace;color:var(--txt)}
+  #scene{position:fixed;inset:0;z-index:0}
+  #labels{position:fixed;inset:0;z-index:1;pointer-events:none;overflow:hidden}
+  .lbl-anchor{position:relative;width:0;height:0}
+  .lbl{position:absolute;left:50%;bottom:100%;transform:translateX(-50%);
+    color:var(--cyan);font-size:12px;letter-spacing:.5px;text-shadow:0 0 6px rgba(0,0,0,.9);
+    padding:1px 6px;border:1px solid var(--line);border-radius:3px;background:rgba(4,8,16,.45);
+    white-space:nowrap;pointer-events:none}
+  .lbl.sys{color:var(--amber)}
+  .lbl.moon{color:#bcd6ff}
+  .vel-line{font-size:9.5px;color:#8fd9c0;letter-spacing:0;margin-top:3px;padding-top:3px;
+    border-top:1px solid rgba(95,227,255,.18);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+  /* 顶部：标题 */
+  #top{position:fixed;top:0;left:0;right:0;z-index:3;padding:14px 18px;display:flex;
+    justify-content:space-between;align-items:flex-start;pointer-events:none}
+  #title{font-size:15px;font-weight:600;color:#fff;letter-spacing:1px;text-shadow:0 0 10px rgba(95,227,255,.4)}
+  #title small{display:block;font-size:11px;color:var(--dim);font-weight:400;margin-top:3px;letter-spacing:0}
+  /* 右上角层级导航器：当前节点 + 可滚动的子级清单；自身限高，不侵入右下角数据来源 */
+  #navigator{position:fixed;right:14px;top:64px;z-index:4;width:272px;
+    max-height:min(56vh,460px);display:flex;flex-direction:column;
+    background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    backdrop-filter:blur(6px);box-shadow:0 0 24px rgba(0,0,0,.55);overflow:hidden}
+  #nav-head{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line);flex:none}
+  #nav-up{cursor:pointer;flex:none;background:rgba(95,227,255,.08);color:var(--cyan);
+    border:1px solid var(--line);border-radius:5px;padding:4px 8px;font-size:11px;font-family:inherit}
+  #nav-up:hover:not(:disabled){background:rgba(95,227,255,.2)}
+  #nav-up:disabled{opacity:.32;cursor:default}
+  #nav-title{font-size:12.5px;color:var(--amber);font-weight:600;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #nav-path{flex:none;padding:5px 10px;font-size:10px;color:var(--dim);
+    border-bottom:1px dashed var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #nav-list{overflow-y:auto;flex:1;min-height:0;padding:5px}
+  #nav-list::-webkit-scrollbar{width:6px}
+  #nav-list::-webkit-scrollbar-thumb{background:rgba(95,227,255,.28);border-radius:3px}
+  #nav-list::-webkit-scrollbar-track{background:transparent}
+  .nav-item{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:6px 8px;font-size:11.5px;color:var(--txt);cursor:pointer;border-radius:5px;line-height:1.3}
+  .nav-item:hover{background:rgba(95,227,255,.12);color:#fff}
+  .nav-item.sel{background:rgba(255,207,107,.14);color:var(--amber)}
+  .nav-item .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .nav-item .sb{flex:none;color:var(--dim);font-size:9.5px;white-space:nowrap}
+  .nav-item .go{flex:none;color:var(--cyan)}
+  .nav-empty{padding:10px;color:var(--dim);font-size:11px;line-height:1.6}
+  #nav-foot{flex:none;padding:6px 10px;font-size:9.5px;color:var(--dim);
+    border-top:1px solid var(--line);line-height:1.5}
+
+  /* 信息面板 */
+  #info{position:fixed;left:18px;top:74px;width:268px;z-index:3;background:var(--panel);
+    border:1px solid var(--line);border-radius:8px;padding:14px 16px;backdrop-filter:blur(6px);
+    box-shadow:0 0 24px rgba(0,0,0,.5)}
+  #info h3{font-size:14px;color:#fff;margin-bottom:2px;letter-spacing:.5px}
+  #info .sub{font-size:11px;color:var(--dim);margin-bottom:10px}
+  #info ul{list-style:none;font-size:12px;line-height:1.7;max-height:50vh;overflow:auto}
+  #info ul li::before{content:"▹ ";color:var(--cyan)}
+  #info ul li.vel-sep{color:var(--amber);font-size:10px;letter-spacing:1px;margin-top:8px;
+    border-top:1px dashed var(--line);padding-top:7px}
+  #info ul li.vel-sep::before{content:""}
+  #info ul li.vel{color:#8fe3c8;font-variant-numeric:tabular-nums}
+  #info ul li.velnote{color:var(--dim);font-size:10.5px;line-height:1.5}
+  #info .hint{margin-top:10px;font-size:11px;color:var(--amber);line-height:1.6;border-top:1px dashed var(--line);padding-top:8px}
+
+  /* 底部控制条 */
+  #controls{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:3;
+    display:flex;gap:14px;align-items:center;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;padding:10px 18px;backdrop-filter:blur(6px);font-size:12px;flex-wrap:wrap;justify-content:center;max-width:94vw}
+  #controls .grp{display:flex;align-items:center;gap:8px}
+  #controls button{cursor:pointer;background:rgba(95,227,255,.08);color:var(--cyan);
+    border:1px solid var(--line);border-radius:6px;padding:6px 12px;font-size:12px;font-family:inherit}
+  #controls button:hover{background:rgba(95,227,255,.2)}
+  #controls button.on{background:rgba(255,207,107,.16);color:var(--amber);border-color:rgba(255,207,107,.4)}
+  #controls input[type=range]{width:120px;accent-color:var(--cyan)}
+  #time-readout{color:var(--amber);font-variant-numeric:tabular-nums;min-width:128px;text-align:center}
+
+  #data-note{position:fixed;right:14px;bottom:14px;z-index:3;max-width:300px;font-size:10.5px;
+    color:var(--dim);line-height:1.6;text-align:right;pointer-events:none}
+  #data-note b{color:var(--cyan);font-weight:600}
+
+  /* 左下角比例尺 */
+  #scalebar{position:fixed;left:18px;bottom:22px;z-index:4;color:var(--txt);font-size:12px;
+    background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px;
+    backdrop-filter:blur(6px);box-shadow:0 0 18px rgba(0,0,0,.45)}
+  #scalebar .sb-title{font-size:10.5px;color:var(--dim);letter-spacing:1px;margin-bottom:6px}
+  #scalebar .sb-row{display:flex;align-items:center;gap:8px}
+  #sb-bar{height:0;border-top:2px solid var(--cyan);position:relative;width:120px}
+  #sb-bar::before,#sb-bar::after{content:'';position:absolute;top:-5px;width:2px;height:10px;background:var(--cyan)}
+  #sb-bar::before{left:0}#sb-bar::after{right:0}
+  #sb-label{font-variant-numeric:tabular-nums;color:var(--cyan);white-space:nowrap}
+
+  #loading{position:fixed;inset:0;z-index:9;display:flex;align-items:center;justify-content:center;
+    background:var(--bg);color:var(--cyan);font-size:14px;letter-spacing:2px}
+</style>
+<!-- 不再使用 importmap：改用相对路径直接 import 本地 three，兼容性更好 -->
+</head>
+<body>
+  <div id="scene"></div>
+  <div id="labels"></div>
+  <div id="loading">初始化星图…</div>
+
+  <div id="top">
+    <div id="title">近邻宇宙星系可视化
+      <small>近邻宇宙 › 本星系群 › 银河系 › 恒星系 › 行星系 · 真实天文参数 · 自由视角</small>
+    </div>
+  </div>
+
+  <nav id="navigator">
+    <div id="nav-head">
+      <button id="nav-up">‹ 上一级</button>
+      <span id="nav-title">近邻宇宙</span>
+    </div>
+    <div id="nav-path"></div>
+    <div id="nav-list"></div>
+    <div id="nav-foot">拖拽旋转 · 滚轮缩放 · 右键平移<br>点清单项下钻 / 定位 · 点天体看实测参数</div>
+  </nav>
+
+  <aside id="info">
+    <h3 id="info-title">欢迎</h3>
+    <div class="sub" id="info-sub">近邻宇宙 / 本星系群 / 银河系 / 恒星系 / 行星系</div>
+    <ul id="info-body"></ul>
+    <div class="hint" id="info-hint">用右上角导航器逐级下钻：点清单项进入下一层，点「‹ 上一级」返回。</div>
+  </aside>
+
+  <div id="scalebar">
+    <div class="sb-title">比例尺 SCALE</div>
+    <div class="sb-row">
+      <div id="sb-bar"></div>
+      <span id="sb-label">—</span>
+    </div>
+  </div>
+
+  <div id="controls">
+    <div class="grp">
+      <button id="btn-pause">⏸ 暂停</button>
+      <button id="btn-reset">↺ 复位视角</button>
+    </div>
+    <div class="grp">
+      <span>速度</span>
+      <input id="speed" type="range" min="0.1" max="5" step="0.1" value="1" />
+      <span id="speed-val">1.0×</span>
+    </div>
+    <div class="grp">
+      <button id="btn-orbits" class="on">轨道线</button>
+      <button id="btn-labels" class="on">标签</button>
+      <button id="btn-size" class="on">体积：示意</button>
+      <button id="btn-vel" class="on">速度</button>
+    </div>
+    <div id="time-readout">已运行 0.0 天</div>
+  </div>
+
+  <div id="data-note">
+    数据来源：<b>NASA Planetary Fact Sheet</b> / JPL / <b>NASA Exoplanet Archive</b> / NED / SIMBAD（2026-11-07 固化）<br>
+    近邻宇宙与本星系群：星系距离、天球方位按实测值换算；银河系螺旋臂与邻近恒星标记位置为示意散布。<br>
+    系统内轨道为<b>真实相对比例</b>；星系本体显示尺寸已放大；左下角比例尺随缩放实时换算。<br>
+    速度由实测半长轴 / 周期 / 半径推导（<b>v = 2πr / T</b>，圆轨道近似，偏心率误差 &lt;2%）；仅少数有可靠实测值者直接引用，其余如实说明不适用。<br>
+    <span id="size-note">当前：示意模式（行星已放大以保证可见；太阳为系统中最大天体）。</span>
+  </div>
+
+  <script src="./celestial.js"></script>
+  <script type="module" src="./main_galaxy.js"></script>
+</body>
+</html>

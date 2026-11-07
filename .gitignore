@@ -1,0 +1,8 @@
+# WorkBuddy 内部数据：含工作日志等，属于本地状态，不要推到公开仓库
+.workbuddy/
+
+# 抓取 NASA 数据时的中间产物（页面不引用）
+exo_raw.json
+
+# GitHub Actions 组装站点时的临时产物（由 workflow 生成，不提交）
+_site/
