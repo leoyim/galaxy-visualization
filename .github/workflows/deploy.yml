@@ -26,6 +26,9 @@ jobs:
 
       - name: 配置 Pages
         uses: actions/configure-pages@v5
+        with:
+          # 首次运行时仓库可能尚未启用 Pages，允许自动启用，避免 configure-pages 直接 404 失败
+          enablement: true
 
       - name: 组装静态站点（只发布必要文件，排除废弃分支与本地状态）
         run: |
