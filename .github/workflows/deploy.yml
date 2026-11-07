@@ -33,7 +33,8 @@ jobs:
       - name: 组装静态站点（只发布必要文件，排除废弃分支与本地状态）
         run: |
           mkdir -p _site/vendor/addons/controls _site/vendor/addons/renderers
-          cp index.html galaxy.html celestial.js main_galaxy.js CNAME .nojekyll _site/
+          cp index.html galaxy.html celestial.js main_galaxy.js CNAME .nojekyll \
+             favicon.svg favicon-32.png apple-touch-icon.png _site/
           cp vendor/three.module.min.js _site/vendor/
           cp vendor/addons/controls/OrbitControls.js _site/vendor/addons/controls/
           cp vendor/addons/renderers/CSS2DRenderer.js _site/vendor/addons/renderers/
